@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>客户复购预警系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-50 font-sans">
+    <nav class="bg-orange-700 text-white p-4 shadow-lg">
+        <div class="max-w-6xl mx-auto flex items-center justify-between flex-wrap gap-2">
+            <h1 class="text-xl font-bold"><i class="fa fa-bell mr-2"></i>客户复购预警系统</h1>
+            <div class="space-x-2 text-sm flex flex-wrap">
+                <button onclick="showTab('dashboard')" class="tab-btn px-3 py-1 rounded bg-orange-500">仪表盘</button>
+                <button onclick="showTab('add')" class="tab-btn px-3 py-1 rounded hover:bg-orange-500"><i class="fa fa-plus"></i> 添加客户</button>
+                <button onclick="showTab('import')" class="tab-btn px-3 py-1 rounded hover:bg-orange-500"><i class="fa fa-upload"></i> 导入</button>
+                <button onclick="showTab('rfm')" class="tab-btn px-3 py-1 rounded hover:bg-orange-500"><i class="fa fa-cubes"></i> RFM分析</button>
+            </div>
+        </div>
+    </nav>
+    <div class="max-w-6xl mx-auto p-4">
+        <!-- 仪表盘 -->
+        <div id="tab-dashboard" class="tab-content">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white rounded-xl shadow p-5 text-center"><div class="text-gray-500 text-sm">总客户</div><div id="totalClients" class="text-2xl font-bold text-gray-700">0</div></div>
+                <div class="bg-white rounded-xl shadow p-5 text-center"><div class="text-gray-500 text-sm">高价值</div><div id="highValue" class="text-2xl font-bold text-green-600">0</div></div>
+                <div class="bg-white rounded-xl shadow p-5 text-center"><div class="text-gray-500 text-sm">需维系</div><div id="needRetain" class="text-2xl font-bold text-yellow-600">0</div></div>
+                <div class="bg-white rounded-xl shadow p-5 text-center"><div class="text-gray-500 text-sm">流失风险</div><div id="churnRisk" class="text-2xl font-bold text-red-600">0</div></div>
+            </div>
+            <div class="bg-white rounded-xl shadow p-6 mb-6">
+                <div class="flex flex-wrap justify-between items-center mb-4 gap-2">
+                    <h3 class="font-bold"><i class="fa fa-users mr-2 text-orange-600"></i>客户列表（按流失概率排序）</h3>
+                    <div class="flex flex-wrap gap-2">
+                        <select id="riskFilter" onchange="renderDashboard()" class="border rounded p-1 text-sm">
+                            <option value="all">全部分层</option>
+                            <option value="high_value">高价值</option>
+                            <option value="need_retain">需维系</option>
+                            <option value="churn_risk">流失风险</option>
+                            <option value="churned">已流失</option>
+                        </select>
+                        <input type="text" id="searchInput" oninput="renderDashboard()" class="border rounded p-1 text-sm w-32" placeholder="搜索姓名/标签...">
+                        <button onclick="exportWarningReport()" class="bg-indigo-500 text-white px-3 py-1 rounded text-sm hover:bg-indigo-600"><i class="fa fa-download mr-1"></i>导出预警报告</button>
+                        <button onclick="clearAllData()" class="bg-red-500 text-white px-3 py-1 rounded text-sm hover:bg-red-600"><i class="fa fa-trash mr-1"></i>清空</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-gray-100"><th class="p-2 text-left">客户名</th><th class="p-2 text-left">联系方式</th><th class="p-2 text-right">累计消费</th><th class="p-2 text-right">消费次数</th><th class="p-2 text-center">RFM评分</th><th class="p-2 text-center">CLV</th><th class="p-2 text-center">分层</th><th class="p-2 text-center">流失概率</th><th class="p-2">操作</th></tr></thead><tbody id="clientTable"></tbody></table></div>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-white rounded-xl shadow p-5">
+                    <h3 class="font-bold mb-3"><i class="fa fa-life-ring mr-2 text-orange-600"></i>挽回策略推荐</h3>
+                    <div id="recoveryTips" class="space-y-2"></div>
+                </div>
+                <div class="bg-white rounded-xl shadow p-5">
+                    <h3 class="font-bold mb-3"><i class="fa fa-pie-chart mr-2 text-orange-600"></i>客户分层分布</h3>
+                    <div id="layerBar" class="flex gap-1 h-8 rounded overflow-hidden"></div>
+                    <div id="layerLegend" class="flex flex-wrap gap-3 mt-2 text-xs"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 添加客户 -->
+        <div id="tab-add" class="tab-content hidden">
+            <div class="bg-white rounded-xl shadow p-6 max-w-lg mx-auto">
+                <h3 class="font-bold mb-4"><i class="fa fa-user-plus mr-2 text-orange-600"></i>添加/编辑客户</h3>
+                <div class="space-y-3">
+                    <div><label class="block text-sm text-gray-600 mb-1">客户姓名 *</label><input type="text" id="clientName" class="w-full border rounded p-2"></div>
+                    <div><label class="block text-sm text-gray-600 mb-1">联系方式</label><input type="text" id="clientContact" class="w-full border rounded p-2" placeholder="手机/微信/邮箱"></div>
+                    <div><label class="block text-sm text-gray-600 mb-1">最近消费金额 (¥)</label><input type="number" id="clientAmount" class="w-full border rounded p-2" placeholder="0"></div>
+                    <div><label class="block text-sm text-gray-600 mb-1">购买产品/服务</label><input type="text" id="clientProduct" class="w-full border rounded p-2" placeholder="如：课程A"></div>
+                    <div><label class="block text-sm text-gray-600 mb-1">购买日期</label><input type="date" id="clientDate" class="w-full border rounded p-2"></div>
+                    <div><label class="block text-sm text-gray-600 mb-1">首次购买日期</label><input type="date" id="clientFirstDate" class="w-full border rounded p-2"></div>
+                    <div><label class="block text-sm text-gray-600 mb-1">累计消费次数</label><input type="number" id="clientFreq" class="w-full border rounded p-2" value="1" min="1"></div>
+                    <div><label class="block text-sm text-gray-600 mb-1">标签（逗号分隔）</label><input type="text" id="clientTags" class="w-full border rounded p-2" placeholder="VIP,企业客户,高潜"></div>
+                    <button onclick="addClient()" class="w-full bg-orange-600 text-white py-3 rounded-lg hover:bg-orange-700"><i class="fa fa-save mr-2"></i>保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 导入 -->
+        <div id="tab-import" class="tab-content hidden">
+            <div class="max-w-2xl mx-auto">
+                <div class="bg-white rounded-xl shadow p-6">
+                    <h3 class="font-bold mb-4"><i class="fa fa-file-excel-o mr-2 text-orange-600"></i>批量导入客户</h3>
+                    <p class="text-sm text-gray-500 mb-2">支持CSV文件批量导入，也可直接粘贴数据。</p>
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        <button onclick="downloadTemplate()" class="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600"><i class="fa fa-download mr-1"></i>下载CSV模板</button>
+                    </div>
+                    <!-- CSV文件上传区域（拖拽+点击） -->
+                    <div id="dropZone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-orange-400 transition cursor-pointer mb-4 bg-gray-50">
+                        <i class="fa fa-cloud-upload text-4xl text-gray-300 mb-2"></i>
+                        <p class="text-gray-500">拖拽CSV文件到此处，或<span class="text-orange-600 font-medium">点击选择文件</span></p>
+                        <p class="text-xs text-gray-400 mt-1">支持 .csv 格式，UTF-8 编码</p>
+                        <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="handleFileUpload(event)">
+                    </div>
+                    <textarea id="csvInput" rows="5" class="w-full border rounded p-2 text-sm font-mono" placeholder="或直接粘贴CSV数据（格式：姓名,联系方式,金额,产品,日期,消费次数,首购日期,标签）"></textarea>
+                    <button onclick="importCSV()" class="w-full bg-green-600 text-white py-3 mt-4 rounded-lg hover:bg-green-700"><i class="fa fa-upload mr-2"></i>导入</button>
+                    <div id="importResult" class="mt-4 hidden"></div>
+                </div>
+                <div class="bg-white rounded-xl shadow p-6 mt-6">
+                    <h3 class="font-bold mb-4"><i class="fa fa-database mr-2 text-orange-600"></i>导入示例数据（10个客户）</h3>
+                    <p class="text-sm text-gray-500 mb-3">点击一键导入内置示例客户数据</p>
+                    <button onclick="loadDemoData()" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700"><i class="fa fa-cloud-download mr-1"></i>导入示例数据</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RFM分析 -->
+        <div id="tab-rfm" class="tab-content hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                <div class="bg-white rounded-xl shadow p-6">
+                    <h3 class="font-bold mb-4"><i class="fa fa-cubes mr-2 text-orange-600"></i>RFM模型分析</h3>
+                    <div class="space-y-4 text-sm">
+                        <div class="p-3 bg-blue-50 rounded"><span class="font-medium text-blue-700">R - 最近购买</span><br><span class="text-gray-600">距上次购买天数，越短越好</span></div>
+                        <div class="p-3 bg-green-50 rounded"><span class="font-medium text-green-700">F - 购买频率</span><br><span class="text-gray-600">累计购买次数，越高越好</span></div>
+                        <div class="p-3 bg-purple-50 rounded"><span class="font-medium text-purple-700">M - 消费金额</span><br><span class="text-gray-600">累计消费总额，越高越好</span></div>
+                        <div class="p-3 bg-orange-50 rounded"><span class="font-medium text-orange-700">CLV - 客户生命周期价值</span><br><span class="text-gray-600">客户在整个生命周期内的总价值贡献</span></div>
+                    </div>
+                </div>
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl shadow p-6">
+                        <h3 class="font-bold mb-4"><i class="fa fa-bar-chart mr-2 text-orange-600"></i>RFM评分详情</h3>
+                        <div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="bg-gray-100"><th class="p-2 text-left">客户</th><th class="p-2 text-center">R分</th><th class="p-2 text-center">F分</th><th class="p-2 text-center">M分</th><th class="p-2 text-center">RFM总分</th><th class="p-2 text-center">CLV</th><th class="p-2 text-center">分层</th></tr></thead><tbody id="rfmTable"></tbody></table></div>
+                    </div>
+                </div>
+            </div>
+            <!-- 客户画像雷达图 -->
+            <div class="bg-white rounded-xl shadow p-6">
+                <h3 class="font-bold mb-4"><i class="fa fa-pie-chart mr-2 text-orange-600"></i>客户画像雷达图</h3>
+                <p class="text-sm text-gray-500 mb-3">选择客户查看RFM各维度得分可视化</p>
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <select id="radarClientSelect" onchange="renderRadarChart()" class="border rounded p-2 text-sm flex-1 max-w-xs"></select>
+                </div>
+                <canvas id="radarChart" height="260"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 客户详情弹窗 -->
+    <div id="detailModal" class="fixed inset-0 z-50 hidden bg-black/40 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this)closeDetail()">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-y-auto">
+            <div class="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white z-10">
+                <h3 class="text-lg font-bold text-gray-800"><i class="fa fa-user mr-2 text-orange-600"></i><span id="detailName"></span></h3>
+                <button onclick="closeDetail()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <div id="detailBody" class="p-5 space-y-4"></div>
+        </div>
+    </div>
+
+    <script>
+        // 示例客户数据（10个，含标签和新字段）
+        const DEMO_CLIENTS = [
+            { name: '王小明', contact: '13800001001', tags: 'VIP,高活跃', firstPurchaseDate: '2025-01-15', purchases: [{ amount: 2999, product: '年度会员', date: '2026-05-15' }, { amount: 199, product: '电子书', date: '2026-05-20' }, { amount: 599, product: '训练营', date: '2026-04-10' }] },
+            { name: '李芳', contact: '13800001002', tags: '活跃', firstPurchaseDate: '2025-03-01', purchases: [{ amount: 599, product: '训练营', date: '2026-05-01' }, { amount: 199, product: '电子书', date: '2026-03-15' }] },
+            { name: '赵强', contact: 'weixin_zq', tags: '低活跃', firstPurchaseDate: '2025-12-10', purchases: [{ amount: 99, product: '入门课', date: '2025-12-10' }] },
+            { name: '陈静', contact: 'chenjing@email.com', tags: 'VIP,企业客户', firstPurchaseDate: '2024-06-20', purchases: [{ amount: 4999, product: '企业服务', date: '2026-04-20' }, { amount: 2999, product: '年度会员', date: '2026-01-15' }, { amount: 199, product: '模板包', date: '2025-11-20' }] },
+            { name: '刘洋', contact: '13800001005', tags: '新客', firstPurchaseDate: '2026-02-28', purchases: [{ amount: 199, product: '电子书', date: '2026-02-28' }] },
+            { name: '张伟', contact: 'zhangwei@email.com', tags: '高潜,活跃', firstPurchaseDate: '2025-05-10', purchases: [{ amount: 899, product: '专业版', date: '2026-05-22' }, { amount: 299, product: '插件包', date: '2026-05-25' }, { amount: 599, product: '训练营', date: '2026-05-10' }] },
+            { name: '林小红', contact: '13800001007', tags: '沉睡', firstPurchaseDate: '2025-06-15', purchases: [{ amount: 299, product: '课程A', date: '2025-08-15' }, { amount: 199, product: '课程B', date: '2025-06-20' }] },
+            { name: '周明', contact: 'zhouming@email.com', tags: '中活跃', firstPurchaseDate: '2025-03-05', purchases: [{ amount: 1499, product: '高级会员', date: '2026-03-10' }, { amount: 299, product: '课程A', date: '2025-12-05' }] },
+            { name: '吴丽', contact: '13800001009', tags: '流失风险', firstPurchaseDate: '2025-05-20', purchases: [{ amount: 99, product: '入门课', date: '2025-05-20' }] },
+            { name: '郑大勇', contact: 'zhengdy@email.com', tags: 'VIP,高价值', firstPurchaseDate: '2024-08-20', purchases: [{ amount: 1999, product: '年度会员', date: '2026-04-05' }, { amount: 599, product: '训练营', date: '2026-02-15' }, { amount: 299, product: '课程A', date: '2025-10-10' }, { amount: 199, product: '电子书', date: '2025-08-20' }] }
+        ];
+
+        let clients = JSON.parse(localStorage.getItem('clients') || '[]');
+        let editingId = null;
+        let radarChartInstance = null;
+
+        function save() { localStorage.setItem('clients', JSON.stringify(clients)); }
+
+        function showTab(name) {
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.className = 'tab-btn px-3 py-1 rounded hover:bg-orange-500');
+            const btn = [...document.querySelectorAll('.tab-btn')].find(b => b.textContent.includes(name === 'add' ? '添加' : name === 'import' ? '导入' : name === 'rfm' ? 'RFM' : '仪表'));
+            if (btn) btn.className = 'tab-btn px-3 py-1 rounded bg-orange-500';
+            document.getElementById('tab-' + name).classList.remove('hidden');
+            if (name === 'dashboard') renderDashboard();
+            if (name === 'rfm') renderRFM();
+        }
+
+        // CLV计算
+        function calcCLV(client) {
+            const purchases = client.purchases || [];
+            const totalAmount = purchases.reduce((s, p) => s + (p.amount || 0), 0);
+            const buyCount = purchases.length;
+            if (buyCount === 0) return 0;
+            const avgOrderValue = totalAmount / buyCount;
+
+            // 计算客户生命周期（月）
+            const now = new Date();
+            const dates = purchases.map(p => new Date(p.date)).filter(d => !isNaN(d));
+            const firstDate = client.firstPurchaseDate ? new Date(client.firstPurchaseDate) : (dates.length > 0 ? new Date(Math.min(...dates)) : now);
+            const lifetimeMonths = Math.max(1, (now - firstDate) / (1000 * 60 * 60 * 24 * 30));
+
+            // 月均购买频率
+            const monthlyFreq = buyCount / lifetimeMonths;
+
+            // 预计剩余生命周期（按平均12个月计算）
+            const remainingMonths = 12;
+
+            // CLV = 平均订单价值 * 月均频率 * 剩余月数
+            return avgOrderValue * monthlyFreq * remainingMonths;
+        }
+
+        // RFM评分
+        function calcRFM(client) {
+            const now = new Date();
+            const purchases = client.purchases || [];
+            const dates = purchases.map(p => new Date(p.date)).filter(d => !isNaN(d));
+            const lastDate = dates.length > 0 ? Math.max(...dates) : now;
+            const daysSinceLast = (now - lastDate) / (1000 * 60 * 60 * 24);
+            const r = Math.min(5, Math.max(1, Math.round(daysSinceLast / 30)));
+            const f = Math.min(5, purchases.length);
+            const totalAmount = purchases.reduce((s, p) => s + (p.amount || 0), 0);
+            const m = Math.min(5, Math.round(totalAmount / 1000));
+            const rfmScore = (6 - r) * 0.4 + f * 0.3 + m * 0.3;
+            return { r, f, m, rfmScore };
+        }
+
+        function getLayer(rfm) {
+            if (rfm.rfmScore >= 3.5) return 'high_value';
+            if (rfm.rfmScore >= 2.5) return 'need_retain';
+            if (rfm.rfmScore >= 1.5) return 'churn_risk';
+            return 'churned';
+        }
+
+        function getLayerLabel(layer) {
+            const labels = { high_value: '高价值', need_retain: '需维系', churn_risk: '流失风险', churned: '已流失' };
+            return labels[layer] || '未知';
+        }
+
+        function getLayerColor(layer) {
+            const colors = { high_value: 'bg-green-100 text-green-700', need_retain: 'bg-yellow-100 text-yellow-700', churn_risk: 'bg-orange-100 text-orange-700', churned: 'bg-red-100 text-red-700' };
+            return colors[layer] || 'bg-gray-100 text-gray-700';
+        }
+
+        function getChurnProb(client) {
+            // 基于最后一次购买日期计算流失概率
+            const purchases = client.purchases || [];
+            const dates = purchases.map(p => new Date(p.date)).filter(d => !isNaN(d));
+            if (dates.length === 0) return { prob: 95, label: '极高 (>80%)', color: 'bg-red-100 text-red-700' };
+            const lastDate = new Date(Math.max(...dates));
+            const now = new Date();
+            const daysSince = (now - lastDate) / (1000 * 60 * 60 * 24);
+
+            // 计算概率：使用指数衰减模型，30天为半衰期
+            // 30天 -> 50%, 60天 -> 75%, 90天 -> 87.5%, 120天 -> 93.75%
+            const halfLife = 30;
+            const prob = 100 * (1 - Math.pow(0.5, daysSince / halfLife));
+            const clampedProb = Math.min(99, Math.max(1, Math.round(prob)));
+
+            let label, color;
+            if (clampedProb < 20) { label = '低 (<20%)'; color = 'bg-green-100 text-green-700'; }
+            else if (clampedProb < 50) { label = '中 (20-50%)'; color = 'bg-yellow-100 text-yellow-700'; }
+            else if (clampedProb < 80) { label = '高 (50-80%)'; color = 'bg-orange-100 text-orange-700'; }
+            else { label = '极高 (>80%)'; color = 'bg-red-100 text-red-700'; }
+
+            return { prob: clampedProb, label, color };
+        }
+
+        function renderDashboard() {
+            const filter = document.getElementById('riskFilter').value;
+            const search = document.getElementById('searchInput').value.toLowerCase();
+
+            const enriched = clients.map((c, i) => {
+                const rfm = calcRFM(c);
+                const layer = getLayer(rfm);
+                const purchases = c.purchases || [];
+                const totalAmount = purchases.reduce((s, p) => s + (p.amount || 0), 0);
+                const clv = calcCLV(c);
+                return { ...c, index: i, ...rfm, layer, totalAmount, buyCount: purchases.length, clv };
+            });
+
+            let filtered = enriched;
+            if (filter !== 'all') filtered = filtered.filter(c => c.layer === filter);
+            if (search) {
+                filtered = filtered.filter(c =>
+                    c.name.toLowerCase().includes(search) ||
+                    (c.contact || '').toLowerCase().includes(search) ||
+                    (c.tags || '').toLowerCase().includes(search)
+                );
+            }
+
+            // 统计
+            const highValue = enriched.filter(c => c.layer === 'high_value').length;
+            const needRetain = enriched.filter(c => c.layer === 'need_retain').length;
+            const churnRisk = enriched.filter(c => c.layer === 'churn_risk' || c.layer === 'churned').length;
+            document.getElementById('totalClients').textContent = clients.length;
+            document.getElementById('highValue').textContent = highValue;
+            document.getElementById('needRetain').textContent = needRetain;
+            document.getElementById('churnRisk').textContent = churnRisk;
+
+            // 排序：流失概率高的在前
+            const order = { churned: 0, churn_risk: 1, need_retain: 2, high_value: 3 };
+            filtered.sort((a, b) => (order[a.layer] || 99) - (order[b.layer] || 99));
+
+            // 渲染表格
+            const tbody = document.getElementById('clientTable');
+            tbody.innerHTML = filtered.length === 0 ? '<tr><td colspan="9" class="text-center py-8 text-gray-400">暂无客户数据</td></tr>' :
+                filtered.map(c => {
+                    const churn = getChurnProb(c);
+                    return `<tr class="border-b hover:bg-gray-50 cursor-pointer" onclick="showDetail(${c.index})">
+                    <td class="p-2 font-medium">${c.name}</td>
+                    <td class="p-2 text-gray-500 text-xs">${c.contact || '-'}</td>
+                    <td class="p-2 text-right">¥${c.totalAmount.toFixed(2)}</td>
+                    <td class="p-2 text-right">${c.buyCount}次</td>
+                    <td class="p-2 text-center font-medium">${c.rfmScore.toFixed(1)}</td>
+                    <td class="p-2 text-center font-medium text-indigo-600">¥${c.clv.toFixed(0)}</td>
+                    <td class="p-2 text-center"><span class="px-2 py-1 rounded text-xs font-medium ${getLayerColor(c.layer)}">${getLayerLabel(c.layer)}</span></td>
+                    <td class="p-2 text-center"><span class="px-2 py-1 rounded text-xs font-medium ${churn.color}">${churn.prob}%</span></td>
+                    <td class="p-2"><div class="flex gap-1" onclick="event.stopPropagation()"><button onclick="editClient(${c.id})" class="text-blue-500 hover:text-blue-700 text-xs"><i class="fa fa-edit"></i></button><button onclick="deleteClient(${c.id})" class="text-red-500 hover:text-red-700 text-xs"><i class="fa fa-trash"></i></button></div></td>
+                </tr>`).join('');
+
+            // 挽回策略
+            const tips = document.getElementById('recoveryTips');
+            const churnHigh = enriched.filter(c => c.layer === 'churn_risk' || c.layer === 'churned');
+            const needRet = enriched.filter(c => c.layer === 'need_retain');
+            if (churnHigh.length === 0 && needRet.length === 0) {
+                tips.innerHTML = '<div class="text-green-600 bg-green-50 p-3 rounded text-sm">所有客户状态良好，继续保持！</div>';
+            } else {
+                let html = '';
+                if (churnHigh.length > 0) {
+                    html += `<div class="p-3 bg-red-50 rounded border-l-4 border-red-500 text-sm">
+                        <h4 class="font-medium text-red-700">流失风险/已流失客户 (${churnHigh.length}人)</h4>
+                        <p class="text-gray-600 mt-1">策略：发送专属优惠券 + 限时折扣 + 个人化回访 + 了解流失原因</p>
+                        <p class="text-gray-500 text-xs mt-1">优先挽回：${churnHigh.slice(0, 3).map(c => c.name + '(¥' + c.totalAmount.toFixed(0) + ')').join('、')}</p>
+                    </div>`;
+                }
+                if (needRet.length > 0) {
+                    html += `<div class="p-3 bg-yellow-50 rounded border-l-4 border-yellow-500 text-sm mt-2">
+                        <h4 class="font-medium text-yellow-700">需维系客户 (${needRet.length}人)</h4>
+                        <p class="text-gray-600 mt-1">策略：定期触达 + 新品通知 + 内容分享 + 会员权益提醒</p>
+                    </div>`;
+                }
+                if (highValue > 0) {
+                    html += `<div class="p-3 bg-green-50 rounded border-l-4 border-green-500 text-sm mt-2">
+                        <h4 class="font-medium text-green-700">高价值客户 (${highValue}人)</h4>
+                        <p class="text-gray-600 mt-1">策略：VIP专属服务 + 优先体验权 + 客户顾问委员会邀请</p>
+                    </div>`;
+                }
+                tips.innerHTML = html;
+            }
+
+            // 分层分布图
+            const layers = ['high_value', 'need_retain', 'churn_risk', 'churned'];
+            const counts = layers.map(l => enriched.filter(c => c.layer === l).length);
+            const total = counts.reduce((s, v) => s + v, 0) || 1;
+            const colors = ['bg-green-500', 'bg-yellow-500', 'bg-orange-500', 'bg-red-500'];
+            const bar = document.getElementById('layerBar');
+            bar.innerHTML = counts.map((c, i) => c > 0 ? `<div class="${colors[i]} flex items-center justify-center text-white text-xs font-medium" style="width:${c / total * 100}%">${c}</div>` : '').join('') || '<div class="w-full bg-gray-200 h-8"></div>';
+            const legend = document.getElementById('layerLegend');
+            legend.innerHTML = layers.map((l, i) => `<span class="flex items-center gap-1"><span class="w-3 h-3 rounded ${colors[i]}"></span>${getLayerLabel(l)} (${counts[i]})</span>`).join('');
+        }
+
+        // --- 客户详情弹窗 ---
+        function showDetail(index) {
+            const c = clients[index];
+            if (!c) return;
+            const rfm = calcRFM(c);
+            const layer = getLayer(rfm);
+            const purchases = c.purchases || [];
+            const totalAmount = purchases.reduce((s, p) => s + (p.amount || 0), 0);
+            const clv = calcCLV(c);
+            const dates = purchases.map(p => new Date(p.date)).filter(d => !isNaN(d));
+            const lastDate = dates.length > 0 ? new Date(Math.max(...dates)) : new Date();
+            const firstDate = c.firstPurchaseDate || (dates.length > 0 ? new Date(Math.min(...dates)).toISOString().slice(0, 10) : '未知');
+
+            document.getElementById('detailName').textContent = c.name;
+
+            document.getElementById('detailBody').innerHTML = `
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div class="p-3 bg-gray-50 rounded"><span class="text-gray-500">联系方式</span><br><span class="font-medium">${c.contact || '-'}</span></div>
+                    <div class="p-3 bg-gray-50 rounded"><span class="text-gray-500">标签</span><br><span class="font-medium">${c.tags || '-'}</span></div>
+                    <div class="p-3 bg-gray-50 rounded"><span class="text-gray-500">累计消费</span><br><span class="font-medium">¥${totalAmount.toFixed(2)}</span></div>
+                    <div class="p-3 bg-gray-50 rounded"><span class="text-gray-500">购买次数</span><br><span class="font-medium">${purchases.length}次</span></div>
+                    <div class="p-3 bg-gray-50 rounded"><span class="text-gray-500">首次购买</span><br><span class="font-medium">${firstDate}</span></div>
+                    <div class="p-3 bg-gray-50 rounded"><span class="text-gray-500">最近购买</span><br><span class="font-medium">${lastDate.toISOString().slice(0, 10)}</span></div>
+                    <div class="p-3 bg-indigo-50 rounded"><span class="text-gray-500">RFM评分</span><br><span class="font-bold text-indigo-600">${rfm.rfmScore.toFixed(1)}</span></div>
+                    <div class="p-3 bg-indigo-50 rounded"><span class="text-gray-500">CLV</span><br><span class="font-bold text-indigo-600">¥${clv.toFixed(0)}</span></div>
+                </div>
+                <div class="p-3 rounded text-center text-sm font-medium ${getLayerColor(layer)}">当前分层：${getLayerLabel(layer)} | 流失概率：${getChurnProb(c).label}</div>
+                <div>
+                    <h4 class="font-bold text-sm mb-2"><i class="fa fa-shopping-cart mr-1 text-orange-600"></i>购买历史</h4>
+                    <div class="space-y-2">${purchases.length === 0 ? '<div class="text-gray-400 text-sm">暂无购买记录</div>' :
+                        purchases.slice().reverse().map(p => `<div class="flex justify-between items-center p-2 bg-gray-50 rounded text-sm"><span>${p.date} - ${p.product || '未知产品'}</span><span class="font-medium">¥${(p.amount || 0).toFixed(2)}</span></div>`).join('')}
+                    </div>
+                </div>
+                <div class="p-3 bg-orange-50 rounded">
+                    <h4 class="font-bold text-sm mb-1"><i class="fa fa-exclamation-triangle mr-1 text-orange-600"></i>风险分析</h4>
+                    <div class="text-sm text-gray-600 space-y-1">
+                        ${rfm.r >= 4 ? '<p><i class="fa fa-warning text-red-500 mr-1"></i>距上次购买已超过' + (rfm.r * 30) + '天，有流失风险</p>' : '<p><i class="fa fa-check text-green-500 mr-1"></i>近期有购买行为，状态良好</p>'}
+                        ${purchases.length <= 1 ? '<p><i class="fa fa-warning text-yellow-500 mr-1"></i>仅购买1次，建议引导复购</p>' : '<p><i class="fa fa-check text-green-500 mr-1"></i>已有多次购买，忠诚度较高</p>'}
+                        ${clv > 5000 ? '<p><i class="fa fa-star text-yellow-500 mr-1"></i>高生命周期价值客户，值得重点维护</p>' : ''}
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('detailModal').classList.remove('hidden');
+        }
+
+        function closeDetail() {
+            document.getElementById('detailModal').classList.add('hidden');
+        }
+
+        function addClient() {
+            const name = document.getElementById('clientName').value.trim();
+            const contact = document.getElementById('clientContact').value.trim();
+            const amount = parseFloat(document.getElementById('clientAmount').value) || 0;
+            const product = document.getElementById('clientProduct').value.trim();
+            const date = document.getElementById('clientDate').value || new Date().toISOString().slice(0, 10);
+            const freq = parseInt(document.getElementById('clientFreq').value) || 1;
+            const firstDate = document.getElementById('clientFirstDate').value || date;
+            const tags = document.getElementById('clientTags').value.trim();
+            if (!name) { alert('请输入客户姓名'); return; }
+
+            if (editingId) {
+                const c = clients.find(c => c.id === editingId);
+                if (c) { c.name = name; c.contact = contact; c.tags = tags; c.firstPurchaseDate = firstDate; c.purchases = [{ amount, product, date }]; }
+                editingId = null;
+            } else {
+                const purchases = [{ amount, product, date }];
+                for (let i = 1; i < freq; i++) {
+                    const d = new Date(date);
+                    d.setMonth(d.getMonth() - i);
+                    purchases.push({ amount: Math.round(amount * (0.5 + Math.random() * 0.5)), product, date: d.toISOString().slice(0, 10) });
+                }
+                clients.push({ id: Date.now(), name, contact, tags, firstPurchaseDate: firstDate, purchases });
+            }
+            save(); renderDashboard(); showTab('dashboard');
+            document.getElementById('clientName').value = ''; document.getElementById('clientContact').value = '';
+            document.getElementById('clientAmount').value = ''; document.getElementById('clientProduct').value = '';
+            document.getElementById('clientDate').value = ''; document.getElementById('clientFreq').value = '1';
+            document.getElementById('clientFirstDate').value = ''; document.getElementById('clientTags').value = '';
+        }
+
+        function editClient(id) {
+            const c = clients.find(c => c.id === id);
+            if (!c) return;
+            editingId = id;
+            document.getElementById('clientName').value = c.name;
+            document.getElementById('clientContact').value = c.contact || '';
+            document.getElementById('clientTags').value = c.tags || '';
+            document.getElementById('clientFirstDate').value = c.firstPurchaseDate || '';
+            const purchases = c.purchases || [];
+            const last = purchases[purchases.length - 1] || {};
+            document.getElementById('clientAmount').value = last.amount || '';
+            document.getElementById('clientProduct').value = last.product || '';
+            document.getElementById('clientDate').value = last.date || '';
+            document.getElementById('clientFreq').value = purchases.length;
+            showTab('add');
+        }
+
+        function deleteClient(id) { if (!confirm('确定删除？')) return; clients = clients.filter(c => c.id !== id); save(); renderDashboard(); }
+        function clearAllData() { if (confirm('确定清空所有客户数据？')) { clients = []; save(); renderDashboard(); } }
+
+        // --- CSV模板下载 ---
+        function downloadTemplate() {
+            const bom = '\uFEFF';
+            const csv = bom + '姓名,联系方式,消费金额,产品,购买日期,消费次数,首次购买日期,标签\n张三,13800138000,299,课程A,2026-01-15,2,2025-12-01,VIP\n李四,weixin123,199,服务B,2025-12-01,1,2025-12-01,新客\n';
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = '客户导入模板.csv';
+            link.click();
+            URL.revokeObjectURL(link.href);
+        }
+
+        // --- CSV文件上传（拖拽+点击）---
+        function setupDropZone() {
+            const dz = document.getElementById('dropZone');
+            const input = document.getElementById('csvFileInput');
+            dz.addEventListener('click', () => input.click());
+            dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('border-orange-500', 'bg-orange-50'); });
+            dz.addEventListener('dragleave', () => { dz.classList.remove('border-orange-500', 'bg-orange-50'); });
+            dz.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dz.classList.remove('border-orange-500', 'bg-orange-50');
+                if (e.dataTransfer.files.length > 0) {
+                    handleFile({ file: e.dataTransfer.files[0] });
+                }
+            });
+        }
+
+        function handleFileUpload(event) {
+            handleFile({ file: event.target.files[0] });
+        }
+
+        function handleFile({ file }) {
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                document.getElementById('csvInput').value = e.target.result;
+                showToast('文件已加载，点击"导入"按钮进行导入');
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        // --- CSV导入（增强版）---
+        function importCSV() {
+            const text = document.getElementById('csvInput').value.trim().split('\n').filter(l => l.trim());
+            if (text.length === 0) { alert('请输入或上传CSV数据'); return; }
+
+            let imported = 0, failed = 0, duplicated = 0;
+            const existingNames = new Set(clients.map(c => c.name));
+
+            text.forEach((line, idx) => {
+                const parts = line.split(',').map(s => s.trim());
+                if (parts.length < 2 || !parts[0]) { failed++; return; }
+
+                const name = parts[0];
+                if (existingNames.has(name)) { duplicated++; return; }
+
+                const contact = parts[1] || '';
+                const amt = parseFloat(parts[2]) || 0;
+                const product = parts[3] || '';
+                const date = parts[4] || new Date().toISOString().slice(0, 10);
+                const freq = parseInt(parts[5]) || 1;
+                const firstDate = parts[6] || date;
+                const tags = parts[7] || '';
+
+                const purchases = [{ amount: amt, product, date }];
+                for (let i = 1; i < freq; i++) {
+                    const d = new Date(date);
+                    d.setMonth(d.getMonth() - i);
+                    purchases.push({ amount: Math.round(amt * (0.5 + Math.random() * 0.5)), product, date: d.toISOString().slice(0, 10) });
+                }
+                clients.push({ id: Date.now() + imported, name, contact, tags, firstPurchaseDate: firstDate, purchases });
+                existingNames.add(name);
+                imported++;
+            });
+
+            save(); renderDashboard();
+
+            const resultDiv = document.getElementById('importResult');
+            resultDiv.classList.remove('hidden');
+            resultDiv.innerHTML = `
+                <div class="p-4 rounded-lg ${imported > 0 ? 'bg-green-50' : 'bg-yellow-50'}">
+                    <h4 class="font-bold mb-2">导入结果</h4>
+                    <div class="text-sm space-y-1">
+                        <p><i class="fa fa-check-circle text-green-600 mr-1"></i> 成功导入：<span class="font-bold">${imported}</span> 条</p>
+                        <p><i class="fa fa-exclamation-circle text-yellow-600 mr-1"></i> 重复跳过：<span class="font-bold">${duplicated}</span> 条</p>
+                        <p><i class="fa fa-times-circle text-red-600 mr-1"></i> 导入失败：<span class="font-bold">${failed}</span> 条</p>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-2">现有客户总数：${clients.length}</p>
+                </div>
+            `;
+            document.getElementById('csvInput').value = '';
+            showToast(`导入完成：成功${imported}条，重复${duplicated}条，失败${failed}条`);
+        }
+
+        function loadDemoData() {
+            if (clients.length > 0 && !confirm('已有客户数据，是否覆盖？')) return;
+            clients = DEMO_CLIENTS.map((c, i) => ({ ...c, id: Date.now() + i }));
+            save();
+            renderDashboard();
+            showToast('已导入10个示例客户数据');
+        }
+
+        // --- 导出预警报告（Markdown）---
+        function exportWarningReport() {
+            if (clients.length === 0) { alert('暂无客户数据可导出'); return; }
+
+            const enriched = clients.map(c => {
+                const rfm = calcRFM(c);
+                const layer = getLayer(rfm);
+                const purchases = c.purchases || [];
+                const totalAmount = purchases.reduce((s, p) => s + (p.amount || 0), 0);
+                const clv = calcCLV(c);
+                return { name: c.name, contact: c.contact, totalAmount, buyCount: purchases.length, rfmScore: rfm.rfmScore.toFixed(1), clv: clv.toFixed(0), layer: getLayerLabel(layer), churnProb: getChurnProb(c).label, tags: c.tags || '-' };
+            });
+
+            const warningClients = enriched.filter(c => c.layer === '流失风险' || c.layer === '已流失');
+            const now = new Date().toLocaleDateString('zh-CN');
+
+            let md = `# 客户复购预警报告\n\n`;
+            md += `**生成日期：** ${now}\n`;
+            md += `**总客户数：** ${clients.length}\n`;
+            md += `**预警客户数：** ${warningClients.length}\n\n`;
+            md += `---\n\n`;
+
+            if (warningClients.length > 0) {
+                md += `## 预警客户列表\n\n`;
+                md += `| 客户名 | 联系方式 | 累计消费 | 购买次数 | RFM评分 | CLV | 分层 | 流失概率 | 标签 |\n`;
+                md += `|--------|----------|----------|----------|--------|-----|------|----------|------|\n`;
+                warningClients.forEach(c => {
+                    md += `| ${c.name} | ${c.contact} | ¥${c.totalAmount} | ${c.buyCount}次 | ${c.rfmScore} | ¥${c.clv} | ${c.layer} | ${c.churnProb} | ${c.tags} |\n`;
+                });
+                md += `\n---\n\n`;
+                md += `## 策略建议\n\n`;
+                md += `1. **流失风险客户**：发送专属优惠券 + 限时折扣 + 个人化回访\n`;
+                md += `2. **已流失客户**：了解流失原因 + 强力挽回活动 + 专属回归礼包\n`;
+                md += `3. **需维系客户**：定期触达 + 新品通知 + 内容分享 + 会员权益提醒\n`;
+            } else {
+                md += `当前无预警客户，所有客户状态良好。\n\n`;
+                md += `## 客户分布\n\n`;
+                enriched.forEach(c => {
+                    md += `- ${c.name}：${c.layer}（RFM: ${c.rfmScore}，CLV: ¥${c.clv}）\n`;
+                });
+            }
+
+            md += `\n---\n> 由客户复购预警系统自动生成\n`;
+
+            // 复制
+            copyToClipboard(md);
+
+            // 下载
+            const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `复购预警报告_${new Date().toISOString().slice(0, 10)}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('预警报告已复制并下载');
+        }
+
+        // --- 通用剪贴板 ---
+        function copyToClipboard(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+            } else {
+                fallbackCopy(text);
+            }
+        }
+
+        function fallbackCopy(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            ta.remove();
+        }
+
+        function showToast(msg) {
+            const el = document.getElementById('toast') || (() => {
+                const t = document.createElement('div');
+                t.id = 'toast';
+                t.className = 'fixed bottom-6 right-6 bg-gray-800 text-white px-5 py-3 rounded-xl shadow-2xl text-sm font-medium z-50 transition-all duration-300';
+                document.body.appendChild(t);
+                return t;
+            })();
+            el.textContent = msg;
+            el.classList.remove('hidden', 'opacity-0');
+            el.classList.add('opacity-100');
+            clearTimeout(el._timer);
+            el._timer = setTimeout(() => { el.classList.add('opacity-0'); setTimeout(() => el.classList.add('hidden'), 300); }, 2500);
+        }
+
+        function renderRFM() {
+            const tbody = document.getElementById('rfmTable');
+            if (clients.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-400">暂无客户数据</td></tr>';
+                return;
+            }
+            const enriched = clients.map(c => {
+                const rfm = calcRFM(c);
+                const layer = getLayer(rfm);
+                const clv = calcCLV(c);
+                return { name: c.name, ...rfm, layer, clv };
+            }).sort((a, b) => b.rfmScore - a.rfmScore);
+
+            tbody.innerHTML = enriched.map(c => `<tr class="border-b hover:bg-gray-50">
+                <td class="p-2 font-medium">${c.name}</td>
+                <td class="p-2 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-bold ${c.r <= 2 ? 'bg-red-100 text-red-700' : c.r <= 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}">${c.r}</span></td>
+                <td class="p-2 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-bold ${c.f <= 1 ? 'bg-red-100 text-red-700' : c.f <= 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}">${c.f}</span></td>
+                <td class="p-2 text-center"><span class="inline-block px-2 py-0.5 rounded text-xs font-bold ${c.m <= 1 ? 'bg-red-100 text-red-700' : c.m <= 3 ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}">${c.m}</span></td>
+                <td class="p-2 text-center font-bold">${c.rfmScore.toFixed(1)}</td>
+                <td class="p-2 text-center font-medium text-indigo-600">¥${c.clv.toFixed(0)}</td>
+                <td class="p-2 text-center"><span class="px-2 py-1 rounded text-xs font-medium ${getLayerColor(c.layer)}">${getLayerLabel(c.layer)}</span></td>
+            </tr>`).join('');
+
+            // 填充雷达图客户选择
+            const select = document.getElementById('radarClientSelect');
+            select.innerHTML = clients.map((c, i) => `<option value="${i}">${c.name}</option>`).join('');
+            if (clients.length > 0) renderRadarChart();
+        }
+
+        // --- 客户画像雷达图 ---
+        function renderRadarChart() {
+            const select = document.getElementById('radarClientSelect');
+            const idx = parseInt(select.value);
+            const client = clients[idx];
+            if (!client) return;
+            const rfm = calcRFM(client);
+            const canvas = document.getElementById('radarChart');
+            if (radarChartInstance) radarChartInstance.destroy();
+            const ctx = canvas.getContext('2d');
+            // R分需要反转（数字越大表示越久未购买，得分越低）
+            const rScoreNormalized = Math.max(0, Math.min(5, 6 - rfm.r));
+            radarChartInstance = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['R: 最近购买', 'F: 购买频率', 'M: 消费金额', 'R分(原始)', 'F分(原始)', 'M分(原始)'],
+                    datasets: [{
+                        label: client.name,
+                        data: [rScoreNormalized, rfm.f, rfm.m, rfm.r, rfm.f, rfm.m],
+                        backgroundColor: 'rgba(234, 88, 12, 0.2)',
+                        borderColor: 'rgba(234, 88, 12, 0.8)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(234, 88, 12, 1)',
+                        pointBorderColor: '#fff',
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    scales: {
+                        r: {
+                            min: 0,
+                            max: 5,
+                            ticks: { stepSize: 1, backdropColor: 'transparent' },
+                            grid: { color: 'rgba(0,0,0,0.08)' },
+                            pointLabels: { font: { size: 11 } }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const labels = ['R: 近期活跃度(越高越好)', 'F: 购买频率(越高越好)', 'M: 消费金额(越高越好)', 'R原始分(越低越好)', 'F原始分', 'M原始分'];
+                                    return labels[context.dataIndex] + ': ' + context.raw;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 初始化
+        setupDropZone();
+        renderDashboard();
+        document.getElementById('clientDate').value = new Date().toISOString().slice(0, 10);
+    </script>
+</body>
+</html>
